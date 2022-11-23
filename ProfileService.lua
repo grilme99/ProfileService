@@ -221,6 +221,143 @@ local SETTINGS = {
 	},
 }
 
+--- {place_id, game_job_id}
+export type ActiveSession = { number | string }
+
+export type Listener = (place_id: number | nil, job_id: string | nil) -> any
+
+type NotReleasedHandler =
+	"ForceLoad"
+	| "Steal"
+	| (placeId: number, jobId: string) -> "Repeat" | "Cancel" | "ForceLoad" | "Steal"
+
+export type ProfileService = {
+	--- Set to false when the Roblox server is shutting down. ProfileStore methods should not be called after this
+	--- value is set to false.
+	ServiceLocked: boolean,
+
+	--- Analytics endpoint for DataStore error logging.
+	--- {error_message, profile_store_name, profile_key}.
+	IssueSignal: RBXScriptSignal<string, string, string>,
+
+	--- Analytics endpoint for cases when a DataStore key returns a value that has all or some of it's profile
+	--- components set to invalid data types. E.g., accidentally setting Profile.Data to a non table value.
+	--- {profile_store_name, profile_key}
+	CorruptionSignal: RBXScriptSignal<string, string>,
+
+	--- Analytics endpoint for cases when DataStore is throwing too many errors and it's most likely affecting your
+	--- game really really bad - this could be due to developer errors or due to Roblox server problems. Could be used
+	--- to alert players about data store outages.
+	--- {is_critical_state}
+	CriticalStateSignal: RBXScriptSignal<boolean>,
+
+	--- ProfileStore objects expose methods for loading / viewing profiles and sending global updates.
+	--- Equivalent of `:GetDataStore()` in Roblox `DataStoreService` API.
+	GetProfileStore: <Data, MetaTags, RobloxMetaData>(
+		storeIndex: string,
+		dataTemplate: Data
+	) -> ProfileStore<Data, MetaTags, RobloxMetaData>,
+}
+
+export type ProfileStore<Data, MetaTags, RobloxMetaData> = {
+	LoadProfileAsync: (
+		self: ProfileStore<Data, MetaTags, RobloxMetaData>,
+		profileKey: string,
+		notReleasedHandler: NotReleasedHandler | nil
+	) -> Profile<Data, MetaTags, RobloxMetaData> | nil,
+
+	GlobalUpdateProfileAsync: (
+		self: ProfileStore<Data, MetaTags, RobloxMetaData>,
+		profileKey: string,
+		updateHandler: (globalUpdates: GlobalUpdates) -> any
+	) -> GlobalUpdates | nil,
+
+	ViewProfileAsync: (
+		self: ProfileStore<Data, MetaTags, RobloxMetaData>,
+		profileKey: string,
+		version: string | nil
+	) -> Profile<Data, MetaTags, RobloxMetaData> | nil,
+}
+
+export type GlobalUpdates = {
+	-- TODO
+}
+
+export type Profile<Data, MetaTags, RobloxMetaData> = {
+	--- Non-strict reference - developer can set this value to a new table reference.
+	Data: Data,
+
+	--- Data about the profile itself.
+	MetaData: {
+		--- os.time() timestamp of profile creation.
+		ProfileCreationTime: number,
+		--- Amount of times the profile was loaded.
+		SessionLoadCount: number,
+		--- Set to a session link if a Roblox server is currently the owner of this profile; nil if released.
+		--- {place_id, game_job_id}
+		ActiveSession: ActiveSession | nil,
+		--- Saved and auto-saved just like `Profile.Data`.
+		MetaTags: MetaTags,
+		--- The most recent version of MetaData.MetaTags which has been saved to the DataStore during the last auto-save
+		--- or `Profile:Save()` call.
+		MetaTagsLatest: MetaTags,
+	},
+
+	--- This signal fires after every auto-save, after `Profile.MetaData.MetaTagsLatest` has been updated with the
+	--- version that's guaranteed to be saved. `MetaTagsUpdated` will fire regardless of whether MetaTagsLatest changed
+	--- after update.
+	MetaTagsUpdated: RBXScriptSignal<MetaTags>,
+
+	--- Non-strict reference - developer can set this value to a new table reference.
+	RobloxMetaData: RobloxMetaData,
+
+	--- User ids associated with this profile. Entries must be added with `Profile:AddUserId()` and removed with
+	--- `Profile:RemoveUserId()`.
+	UserIds: { number },
+
+	--- The `DataStoreKeyInfo` instance related to this profile.
+	KeyInfo: DataStoreKeyInfo,
+
+	--- A signal that gets triggered every time `Profile.KeyInfo` is updated with a new `DataStoreKeyInfo` instance
+	--- reference after every auto-save or profile release.
+	KeyInfoUpdated: RBXScriptSignal<DataStoreKeyInfo>,
+
+	--- This is the GlobalUpdates object tied to this specific Profile. It exposes GlobalUpdates methods for update
+	--- processing.
+	GlobalUpdates: GlobalUpdates,
+
+	--- Returns true while the profile is session-locked and saving of changes to Profile.Data is guaranteed.
+	IsActive: (self: Profile<Data, MetaTags, RobloxMetaData>) -> boolean,
+
+	--- Equivalent of `Profile.MetaData.MetaTags[tag_name]`. See `Profile:SetMetaTag()` for more info.
+	--- TODO: Properly type this with Luau.
+	GetMetaTag: (self: Profile<Data, MetaTags, RobloxMetaData>, tagName: string) -> any,
+
+	--- Fills in missing variables inside `Profile.Data` from `profile_template` table that was provided when calling
+	--- `ProfileService.GetProfileStore()`.
+	Reconcile: (self: Profile<Data, MetaTags, RobloxMetaData>) -> nil,
+
+	--- Listener functions subscribed to `Profile:ListenToRelease()` will be called when the profile is released
+	--- remotely or locally.
+	ListenToRelease: (self: Profile<Data, MetaTags, RobloxMetaData>, listener: Listener) -> RBXScriptConnection,
+
+	--- Removes the session lock for this profile for this Roblox server. Call this method after you're done working
+	--- with the Profile object. Profile data will be immediately saved for the last time.
+	Release: (self: Profile<Data, MetaTags, RobloxMetaData>) -> nil,
+
+	ListenToHopReady: (self: Profile<Data, MetaTags, RobloxMetaData>, listener: () -> any) -> RBXScriptConnection,
+
+	AddUserId: (self: Profile<Data, MetaTags, RobloxMetaData>, userId: number) -> nil,
+	RemoveUserId: (self: Profile<Data, MetaTags, RobloxMetaData>, userId: number) -> nil,
+
+	--- Returns a string containing DataStore name, scope and key; Used for debugging.
+	Identify: (self: Profile<Data, MetaTags, RobloxMetaData>) -> string,
+
+	--- Call `Profile:Save()` to quickly progress GlobalUpdates state or to speed up the propagation of
+	--- `Profile.MetaData.MetaTags` changes to `Profile.MetaData.MetaTagsLatest`.
+	Save: (self: Profile<Data, MetaTags, RobloxMetaData>) -> nil,
+}
+
 local Madwork -- Standalone Madwork reference for portable version of ProfileService
 do
 	local MadworkScriptSignal = {}
@@ -2451,4 +2588,4 @@ task.spawn(function()
 	)
 end)
 
-return ProfileService
+return (ProfileService :: any) :: ProfileService
