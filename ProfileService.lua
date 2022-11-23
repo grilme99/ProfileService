@@ -153,7 +153,7 @@
 
 		Profile:ListenToHopReady(listener) --> [ScriptConnection] () -- Passed listener will be executed after the releasing UpdateAsync call finishes;
 			--	Wrap universe teleport requests with this method AFTER releasing the profile to improve session lock sharing between universe places;
-			--  :ListenToHopReady() will usually call the listener in around a second, but may ocassionally take up to 7 seconds when a release happens
+			--  :ListenToHopReady() will usually call the listener in around a second, but may occasionally take up to 7 seconds when a release happens
 			--	next to an auto-update in regular usage scenarios.
 
 		Profile:AddUserId(user_id) -- Associates user_id with profile (GDPR compliance)
@@ -1901,7 +1901,7 @@ function ProfileStore:LoadProfileAsync(profile_key, not_released_handler, _use_m
 					-- Special case - finished loading profile, but session is shutting down:
 					if ProfileService.ServiceLocked == true then
 						SaveProfileAsync(profile, true) -- Release profile and yield until the DataStore call is finished
-						profile = nil -- nil will be returned by this call
+						profile = nil :: never -- nil will be returned by this call
 					end
 					-- Return Profile object:
 					ActiveProfileLoadJobs = ActiveProfileLoadJobs - 1
